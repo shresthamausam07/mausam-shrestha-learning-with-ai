@@ -146,28 +146,52 @@ float voltage = rawVOC * (3.3 / 4095.0);
 
 ---
 
-# Sensor Calibration
+# Sensor Calibration — Noise
 
-## What I Learned About Noise and Drift
+## Every Low-Cost Sensor Has Two Problems
 
-Every low-cost sensor has two problems:
 1. **Noise** — readings fluctuate randomly second-to-second
 2. **Drift** — baseline shifts slowly over days/weeks
 
-**AI taught me three techniques:**
+**Technique 1: Moving Average Filter**
 
-### 1. Moving Average Filter
 ```cpp
 const int WINDOW = 10;
-int readings[WINDOW];
-// Average the last 10 readings → smoother output
+float readings[WINDOW];
+int idx = 0;
+
+float movingAverage(float newVal) {
+  readings[idx % WINDOW] = newVal;
+  idx++;
+  float sum = 0;
+  for (int i = 0; i < WINDOW; i++) sum += readings[i];
+  return sum / WINDOW;  // Average last 10 → smoother output
+}
 ```
 
-### 2. MH-Z19C ABC (Automatic Baseline Calibration)
-The sensor tracks its own minimum reading over 24 hours and uses it to correct drift — built into the chip.
+> **Result**: CO2 readings went from jumping ±80 ppm per second to stable ±10 ppm.
 
-### 3. Warm-up Time
-CO2 and VOC sensors need 1–3 minutes after power-on before readings stabilize.
+---
+
+# Sensor Calibration — Drift and Warm-up
+
+## Techniques 2 and 3
+
+**Technique 2: MH-Z19C ABC (Automatic Baseline Calibration)**
+- The sensor tracks its own minimum reading over 24 hours
+- Uses that minimum to correct long-term drift — built into the chip
+- No code required; happens automatically in the background
+
+**Technique 3: Warm-up Time**
+- CO2 and VOC sensors need **1–3 minutes** after power-on before readings stabilize
+- Firmware skips publishing to Firebase until sensor has been running ≥ 90 seconds
+
+```cpp
+// Skip first 90 seconds of readings
+if (millis() < 90000) return;
+```
+
+> **AI insight**: Skipping early readings is not a hack — it's documented sensor behavior. The MH-Z19C datasheet explicitly states a warm-up period before accurate output begins.
 
 ---
 

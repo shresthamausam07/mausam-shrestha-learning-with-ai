@@ -7,6 +7,7 @@ author: Mausam Shrestha
 ---
 
 # Learning with AI
+
 ## Topic 2: Mobile App Development with React/PWA
 
 **Mausam Shrestha**
@@ -23,90 +24,110 @@ My Smart Home Health Monitor generates sensor data 24/7.
 People need to **see that data anywhere, from any device** — without installing an app.
 
 **Requirements**:
-- Real-time updates (data changes every 60 seconds)
-- Historical charts (24 hours, 7 days, 30 days)
+
+- Real-time updates — data pushed every 10 seconds
+- Historical charts (1 hour, 24 hours, 7 days, All Data)
 - Works on phone AND desktop
 - No App Store required
-- Automatic purifier control status
+- LED/purifier control status
 - Sleep quality logging interface
 
-**Solution**: React + Progressive Web App + Firebase
+**Solution**: React + Vite + PWA + Firebase Realtime Database
 
 ---
 
-# What I Didn't Know Before
+# What I Already Knew — And What Was New
 
-Going into Sprint 2, my web experience was basic HTML/CSS/JavaScript:
+**My background**: Several MERN stack projects (MongoDB, Express, React, Node.js)
 
--  Never built a React application
--  Did not understand component-based UI architecture
--  Never worked with real-time databases
--  Did not know what a PWA or service worker was
--  Never built a data visualization dashboard
--  Did not understand state management in reactive apps
+| Already knew                    | New for this project                 |
+| ------------------------------- | ------------------------------------ |
+| React components, props, state  | Vite as a build tool                 |
+| `useEffect`, `useMemo`, hooks   | Firebase Realtime Database           |
+| REST API calls from React       | Real-time push with `onValue`        |
+| Deploying Node/Express backends | Firebase Hosting (no backend server) |
+| MongoDB for data storage        | Time-series data in RTDB             |
 
-**This topic pushed me significantly beyond my starting point.**
-
----
-
-# Why React?
-
-## AI Helped Me Understand the Right Tool for This Job
-
-**My first instinct**: Just use plain JavaScript and `setInterval` to refresh the page.
-
-**AI's explanation of why that's wrong for IoT**:
-- Refreshing the whole page causes flicker and loses user context
-- `setInterval` polling wastes bandwidth and adds unnecessary latency
-- React's component model means **only the chart that has new data re-renders**
-
-> **Key insight AI gave me**: In a reactive application, the UI is a *function of state*. When state changes (new sensor reading arrives), React automatically figures out the minimum DOM update needed. You don't tell it *how* to update — you tell it *what the data is*.
+**The challenge wasn't React itself — it was replacing the entire MERN backend with Firebase.**
 
 ---
 
-# React Architecture I Learned
+# Why Vite Instead of Create React App?
 
-## Components Are Building Blocks
+## What AI Helped Me Understand
+
+In my previous MERN projects I used Create React App (CRA). For this project I switched to Vite.
+
+**AI explained the key differences**:
+
+|                    | Create React App      | Vite                      |
+| ------------------ | --------------------- | ------------------------- |
+| Dev server startup | 10–30 seconds         | < 1 second                |
+| Hot reload         | Rebuilds full bundle  | Only sends changed module |
+| Build output       | Slower webpack bundle | Rollup — faster, smaller  |
+| Maintenance        | Deprecated by Meta    | Actively maintained       |
+
+> **Key learning**: CRA was the standard for years but is now unmaintained. Vite is the modern default. For a PWA that needs fast iteration, Vite's dev speed made a real difference.
+
+---
+
+# Replacing the MERN Backend with Firebase
+
+## The Biggest Mental Shift
+
+In MERN stack: React calls **my own Express API** → Express queries **MongoDB** → returns JSON.
+
+For this project: React talks **directly to Firebase** — no Express server, no Node.js, no backend I manage.
 
 ```
-<App>
-  ├── <Header />          — title, last-updated time
-  ├── <SensorCards />     — current CO2, PM2.5, VOC, Temp, Hum
-  ├── <ChartSection>
-  │     ├── <CO2Chart />
-  │     ├── <PM25Chart />
-  │     └── <VOCChart />
-  ├── <PurifierStatus />  — ON/OFF + reason
-  └── <SleepLogger />     — nightly quality rating input
+MERN approach:
+React → fetch('/api/readings') → Express → MongoDB → JSON response
+
+Firebase approach:
+React → onValue(ref(db, 'sensor_readings')) → Firebase pushes data instantly
 ```
 
-**Each component**:
-- Receives data as `props`
-- Manages its own local `state` if needed
-- Re-renders automatically when its data changes
+**What I had to unlearn**: Thinking in request/response. Firebase doesn't respond to requests — it _pushes_ changes the moment they happen. The ESP32 writes to Firebase every 10 seconds; the dashboard updates automatically without asking.
 
 ---
 
-# Firebase Real-Time Integration
+# Firebase Realtime Database Integration
 
-## The Most Important Thing I Learned
+## Observer Pattern vs REST
 
-**Static databases**: You request data → you get data → done.
-
-**Firebase Firestore with `onSnapshot`**: You *subscribe* → Firebase pushes every change to you instantly.
+**Firebase Realtime Database with `onValue`**: You _subscribe_ → Firebase pushes every change to you instantly.
 
 ```javascript
-// This runs ONCE — but the callback fires every time data changes
-const unsubscribe = db.collection("sensor_readings")
-  .orderBy("timestamp", "desc")
-  .limit(100)
-  .onSnapshot((snapshot) => {
-    const readings = snapshot.docs.map(doc => doc.data());
-    setReadings(readings);  // React state updates → UI re-renders
-  });
+import { ref, query, limitToLast, onValue } from "firebase/database";
+
+// Runs ONCE — callback fires every time data changes in Firebase
+const q = query(ref(db, "sensor_readings"), limitToLast(500));
+onValue(q, (snapshot) => {
+  const data = snapshot.val() ?? {};
+  const readings = Object.values(data);
+  setReadings(readings); // React state updates → UI re-renders
+});
 ```
 
-> **AI insight**: This is called the **Observer Pattern**. The database pushes changes to you. Your app doesn't need to ask "is there new data?" every few seconds — it gets told automatically.
+> **AI insight**: This is the **Observer Pattern** — the opposite of REST polling. In MERN I fetched data when I needed it. Here Firebase tells me when data changes. For a live sensor feed, this is always the right model.
+
+---
+
+# Why Realtime Database — Not Firestore
+
+## What AI Got Wrong — And What I Learned From It
+
+**AI initially recommended Firestore** for my IoT dashboard.
+
+**Why that was wrong for my use case**:
+
+- Firestore charges per document read — with 10-second sensor pushes, costs add up fast
+- Firestore is optimized for structured documents, not time-series streams
+- Firebase Realtime Database is designed for exactly this: continuous numeric data, low-latency push, free tier covers IoT projects
+
+**How I found the right answer**: Read Firebase's own comparison guide and looked at how other IoT projects structure their data.
+
+> **Lesson**: AI recommends the popular choice. Firestore is widely discussed. RTDB is the right engineering choice for this specific workload — always evaluate against your actual requirements.
 
 ---
 
@@ -114,7 +135,8 @@ const unsubscribe = db.collection("sensor_readings")
 
 ## Turning Numbers Into Understanding
 
-Raw Firebase data:
+Raw Firebase Realtime Database data:
+
 ```json
 { "timestamp": 1710000000, "co2": 1247, "pm25": 18.3, "voc": 340 }
 ```
@@ -122,16 +144,16 @@ Raw Firebase data:
 Recharts transforms it into interactive time-series charts:
 
 ```javascript
-<LineChart data={readings}>
+<AreaChart data={readings}>
   <XAxis dataKey="timestamp" tickFormatter={formatTime} />
   <YAxis domain={[300, 2000]} />
-  <Line dataKey="co2" stroke="#38bdf8" dot={false} />
-  <ReferenceLine y={1000} stroke="red" label="Danger threshold" />
+  <Area dataKey="co2" stroke="#38bdf8" fill="#e0f2fe" dot={false} />
+  <ReferenceLine y={1000} stroke="red" label="Danger" />
   <Tooltip />
-</LineChart>
+</AreaChart>
 ```
 
-**AI helped me**: Understand how to structure Firebase data so querying 7 days doesn't download 10,000 documents — using date-bucketed collections.
+**AI helped me apply `useMemo` correctly** — filter and transform the raw readings only when the data or selected time range changes, not on every render.
 
 ---
 
@@ -142,6 +164,7 @@ Recharts transforms it into interactive time-series charts:
 **What makes a PWA?**
 
 1. **Web App Manifest** (`manifest.json`)
+
    - App name, icon, theme color
    - Tells the browser "this can be installed to the home screen"
 
@@ -159,7 +182,7 @@ Recharts transforms it into interactive time-series charts:
 }
 ```
 
-> **Why PWA over React Native or Capacitor**: My dashboard is already a React web app hosted on Firebase. A PWA requires adding one file. React Native requires rewriting everything. Capacitor adds tooling overhead. For an IoT dashboard that just needs to display live data on any device, PWA is the right engineering choice.
+> **Why PWA over React Native**: My dashboard is already a React web app on Firebase Hosting. A PWA requires adding one file. React Native requires rewriting the whole app. For a live sensor dashboard, PWA is the right call.
 
 ---
 
@@ -167,65 +190,35 @@ Recharts transforms it into interactive time-series charts:
 
 ## Adding One File to My Existing React App Made It a Mobile App
 
-**Before**: My Firebase-hosted React dashboard was desktop-only in a browser.
+**Before**: Firebase-hosted React dashboard — desktop browser only.
 **After**: With `manifest.json` linked in `index.html`, any phone user can:
 
 - Open the site in Safari or Chrome
 - Tap "Add to Home Screen"
-- Launch it from their home screen like any other app — full screen, no browser UI, my icon
+- Launch it like any other app — full screen, no browser UI, my icon
 
 No App Store. No developer account. No Xcode. No additional code.
 
-**AI helped me understand**: The browser treats a PWA differently from a normal website once it detects a valid manifest. `display: standalone` removes the browser chrome — making it feel native. This is the same mechanism used by Twitter Lite, Pinterest, and Starbucks' mobile ordering site.
+**AI helped me understand**: `display: standalone` removes the browser chrome, making it feel native. This is the same mechanism used by Twitter Lite, Pinterest, and Starbucks' mobile ordering site.
 
 ---
 
-# State Management — The Hardest Concept
+# Firebase Hosting — Replacing Express
 
-## What AI Helped Me Truly Understand
+## Deploying Without a Server
 
-**The problem**: How does the CO2 chart know to update when a new reading arrives from Firebase?
+In MERN projects, I deployed a Node/Express server (Heroku, Render, etc.) to serve the API and static files.
 
-**Wrong mental model** (mine at first):
-> "The chart polls Firebase every 60 seconds"
+For this project, Firebase Hosting serves the React build directly — no server to manage, no process to keep alive, no port to expose.
 
-**Correct mental model** (what AI taught me):
-> Firebase `onSnapshot` → updates React `state` → React re-renders any component that uses that state → only the CO2 chart changes, nothing else
-
-```
-Firebase pushes data
-      ↓
-setReadings(newData)  ← React state setter
-      ↓
-React diffs old vs new virtual DOM
-      ↓
-Only CO2Chart updates in real browser DOM
+```bash
+npm run build          # Vite builds to /dist
+firebase deploy        # Uploads /dist to Firebase CDN globally
 ```
 
----
+**Result**: `smart-home-health-monitor.web.app` — live on a global CDN, HTTPS by default, zero server maintenance.
 
-# What AI Got Wrong — And What I Fixed
-
-**AI hallucination I caught**:
-When I asked Claude how to query Firebase for "last 24 hours" of data, it gave me:
-
-```javascript
-// AI's suggestion — doesn't work this way in Firestore
-db.collection("readings").where("timestamp", ">", "24hours_ago_string")
-```
-
-**The actual fix I found**:
-```javascript
-const yesterday = new Date();
-yesterday.setDate(yesterday.getDate() - 1);
-const yesterdayTimestamp = firebase.firestore.Timestamp.fromDate(yesterday);
-
-db.collection("readings")
-  .where("timestamp", ">", yesterdayTimestamp)  // Firebase Timestamp, not string
-  .orderBy("timestamp", "asc")
-```
-
-> **Lesson**: AI knows the concept but sometimes gets the exact API wrong. Always test against real documentation.
+> **Key learning**: Serverless hosting fundamentally changes the deployment model. There is no "server" — the CDN serves the static files and Firebase handles the real-time database connection directly from the browser.
 
 ---
 
@@ -234,34 +227,21 @@ db.collection("readings")
 **Dashboard features built and working:**
 
 ✅ Real-time sensor cards — CO2, PM2.5, VOC, Temperature, Humidity
-✅ Time-series line charts for all 5 sensors (24h / 7d / 30d views)
-✅ Threshold indicators (red line at CO2 1000 ppm, PM2.5 35 µg/m³)
-✅ Purifier status card (ON/OFF + which sensor triggered it)
+✅ Time-series charts for all 5 sensors (1h / 24h / 7d / All Data)
+✅ Threshold alert badges (CO2 1000 ppm, PM2.5 35 µg/m³, VOC 2500)
+✅ LED/purifier step chart — shows exact ON/OFF timing over selected range
+✅ Sensor health detection — auto-flags stuck or disconnected sensors
 ✅ Sleep quality rating interface (1–10 input, stored in Firebase)
 ✅ PWA installable on iOS Safari and Android Chrome
-✅ Publicly accessible without login
-
-
----
-
-# What I Learned — Summary
-
-| Before | After |
-|---|---|
-| "React is just JavaScript" | Understand component model, props, state, re-rendering |
-| "Just setInterval to refresh" | Know why reactive/observer pattern is better for IoT |
-| "Firebase is a database" | Can use real-time `onSnapshot` subscriptions |
-| "Charts are just plugins" | Can structure data correctly for time-series visualization |
-| "PWA vs native is unclear" | Can choose the right app delivery model for the use case |
-| "AI knows the exact API" | Know to always verify AI-generated code against actual docs |
+✅ Deployed on Firebase Hosting — publicly accessible without login
 
 ---
 
 # Key Takeaway
 
-> **Building a real-time IoT dashboard isn't about formatting a webpage — it's about designing a reactive system where the UI automatically responds to a continuous stream of physical-world data. Every architectural decision, from state management to database query structure, flows from that single idea.**
+> **Knowing React was not enough. The new challenge was replacing the entire backend mental model — from request/response REST APIs to a push-based real-time database, and from server-managed deployments to serverless hosting. That shift in thinking, not the React code itself, was the real learning.**
 
-The difference between a website and a real-time dashboard is the same as the difference between a photograph and a live video feed. AI helped me see that difference and design for it.
+AI accelerated the Firebase and Vite learning significantly — but understanding _why_ each architectural choice was made required reading documentation and building the actual system.
 
 **Repository**: https://github.com/shresthamausam07/smart-home-health-monitor
 **Learning docs**: https://github.com/shresthamausam07/mausam-shrestha-learning-with-ai
@@ -275,5 +255,3 @@ CSC 494 — IoT | Spring 2026
 shrestham2@mymail.nku.edu
 
 **Topic 2 complete** — Mobile App Development with React/PWA
-
-
